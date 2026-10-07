@@ -1,0 +1,146 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="theme-color" content="#f6f7f9"><link rel="manifest" href="./manifest.json">
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--text:#17191c;--muted:#737981;--line:#e6e8eb;--accent:#2563eb;--ok:#198754;--danger:#c73737}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:var(--text);padding-bottom:88px}
+header{position:sticky;top:0;z-index:10;background:rgba(246,247,249,.96);backdrop-filter:blur(12px);padding:18px 16px 10px;border-bottom:1px solid var(--line)}
+h1{font-size:24px;margin:0 0 3px}.sub{font-size:13px;color:var(--muted)}main{padding:12px 14px;max-width:720px;margin:auto}
+.search{width:100%;border:1px solid var(--line);background:#fff;border-radius:14px;padding:12px 14px;font-size:16px;outline:none}
+.section{margin:17px 0 8px;font-size:13px;font-weight:800;color:#555c65;text-transform:uppercase;letter-spacing:.04em}
+.card{background:#fff;border:1px solid var(--line);border-radius:16px;margin-bottom:9px;overflow:hidden}
+.item{display:grid;grid-template-columns:44px 50px 1fr auto;gap:9px;align-items:center;padding:10px}
+.thumb,.rthumb{width:46px;height:46px;border-radius:11px;object-fit:cover;background:#eef0f2}.name{font-weight:750}.meta{font-size:12px;color:var(--muted);margin-top:2px}
+.check{width:40px;height:40px;border-radius:50%;border:0;background:#eaf7ef;color:var(--ok);font-size:20px;font-weight:900}.qty{display:flex;align-items:center;gap:5px}
+.qbtn{border:1px solid var(--line);background:#fff;border-radius:9px;width:31px;height:31px;font-size:18px}.qnum{min-width:22px;text-align:center;font-weight:800}
+.suggest{padding:12px;display:flex;align-items:center;gap:10px}.suggest .grow{flex:1}.addmini{border:0;border-radius:10px;background:#eaf0ff;color:var(--accent);font-weight:800;padding:8px 11px}
+.empty{text-align:center;color:var(--muted);padding:42px 15px}.fab{position:fixed;right:18px;bottom:82px;width:58px;height:58px;border:0;border-radius:50%;background:var(--accent);color:#fff;font-size:30px;box-shadow:0 8px 25px #0003;z-index:15}
+nav{position:fixed;bottom:0;left:0;right:0;height:68px;background:#fff;border-top:1px solid var(--line);display:grid;grid-template-columns:repeat(4,1fr);z-index:20;padding-bottom:env(safe-area-inset-bottom)}
+nav button{border:0;background:none;font-size:11px;color:#747a82}nav button b{display:block;font-size:21px;margin-bottom:2px}nav button.active{color:var(--accent);font-weight:800}
+dialog{border:0;border-radius:20px;width:min(92vw,520px);padding:0;box-shadow:0 20px 70px #0005}.dlg{padding:18px}.dlg h2{margin:0 0 14px}
+.dlg input{width:100%;padding:12px;border:1px solid var(--line);border-radius:12px;font-size:16px;margin-bottom:10px}.results{max-height:42vh;overflow:auto;border:1px solid var(--line);border-radius:14px;margin-bottom:10px}
+.result{padding:9px;display:grid;grid-template-columns:46px 1fr;gap:10px;align-items:center;border-bottom:1px solid var(--line)}.result:last-child{border:0}.selected{background:#eef4ff}
+.actions{display:flex;justify-content:flex-end;gap:8px}.btn{border:1px solid var(--line);background:#fff;padding:10px 14px;border-radius:11px;font-weight:750}.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+.product-row,.history-row,.dept-row{display:flex;align-items:center;gap:10px;padding:10px;border-bottom:1px solid var(--line)}.product-row:last-child,.history-row:last-child,.dept-row:last-child{border:0}.grow{flex:1}
+.iconbtn{border:0;background:#f0f2f4;border-radius:10px;padding:8px 10px;font-weight:800}.danger{color:var(--danger)}
+.settings-title{font-weight:800}.hint{font-size:12px;color:var(--muted);line-height:1.35}.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:88px;background:#222;color:#fff;padding:10px 14px;border-radius:12px;z-index:50;display:none}
+.badge{display:inline-block;background:#eef1f4;border-radius:999px;padding:4px 8px;font-size:12px;font-weight:750}.old{background:#fff2cc}
+</style></head><body>
+<header><h1 id="title">🛒 La mia spesa</h1><div id="summary" class="sub"></div></header>
+<main id="main"></main>
+<button id="fab" class="fab" onclick="openAdd()">+</button>
+<nav>
+<button data-page="spesa" class="active"><b>🛒</b>Spesa</button>
+<button data-page="prodotti"><b>▦</b>Prodotti</button>
+<button data-page="storico"><b>↺</b>Storico</button>
+<button data-page="impostazioni"><b>⚙</b>Impostazioni</button>
+</nav>
+<dialog id="addDlg"><div class="dlg"><h2>Aggiungi prodotto</h2><input id="productName" autocomplete="off" placeholder="Cerca un prodotto…"><div id="productResults" class="results"></div><input id="productQty" type="number" min="1" value="1"><div class="actions"><button class="btn" onclick="$('addDlg').close()">Annulla</button><button class="btn primary" onclick="addProduct()">Aggiungi</button></div></div></dialog>
+<div id="toast" class="toast"></div>
+<script>
+
+function callApi_(action, params, ok, fail){
+  const u=new URL(API); u.searchParams.set('action',action);
+  Object.entries(params||{}).forEach(([k,v])=>u.searchParams.set(k,v));
+  fetch(u).then(r=>r.json()).then(j=>{
+    if(j.ok===false) throw new Error(j.errore||j.error||'Errore API');
+    ok&&ok(j.data!==undefined?j.data:j);
+  }).catch(e=>fail&&fail(e));
+}
+const google={script:{run:null}};
+function runner_(){
+ let ok=null,fail=null;
+ const r={
+  withSuccessHandler(fn){ok=fn;return r}, withFailureHandler(fn){fail=fn;return r},
+  getBootstrap(){callApi_('bootstrap',{},ok,fail)},
+  getImmagineProdotto(id){callApi_('image',{id},x=>ok&&ok(x.src),fail)},
+  aggiungiProdotto(id,q){callApi_('add',{id,q},ok,fail)},
+  aggiornaQuantita(id,q){callApi_('qty',{id,q},ok,fail)},
+  rimuoviProdotto(id){callApi_('remove',{id},ok,fail)},
+  segnaAcquistato(id){callApi_('buy',{id},ok,fail)},
+  salvaOrdineReparti(names){callApi_('depts',{names:JSON.stringify(names)},ok,fail)}
+ }; return r;
+}
+Object.defineProperty(google.script,'run',{get(){return runner_()}});
+
+const $=id=>document.getElementById(id), E=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const API='https://script.google.com/macros/s/AKfycbyCoXinYitqxDUaAkHvr8XHnBn3qxFHtvlAQ8qmOa--EbHsYjCnXLQtGdRRcqMGYCNS/exec';
+let data={lista:[],catalogo:[],storico:[],suggerimenti:[],reparti:[],impostazioni:{}}, page='spesa', selectedProduct=null, imageCache={};
+function toast(s){const t=$('toast');t.textContent=s;t.style.display='block';setTimeout(()=>t.style.display='none',1800)}
+function fmtDate(s){if(!s)return '';const d=new Date(s);return isNaN(d)?s:d.toLocaleDateString('it-IT')}
+function loadImage(img,id){if(!id)return;if(imageCache[id]){img.src=imageCache[id];return}google.script.run.withSuccessHandler(src=>{if(src){imageCache[id]=src;img.src=src}}).getImmagineProdotto(id)}
+function hydrateImages(root=document){root.querySelectorAll('img[data-id]').forEach(x=>loadImage(x,x.dataset.id))}
+function refresh(msg){google.script.run.withSuccessHandler(x=>{data=x;render();if(msg)toast(msg)}).withFailureHandler(e=>toast('Errore: '+e.message)).getBootstrap()}
+function render(){
+ document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.page===page));
+ $('fab').style.display=(page==='spesa'||page==='prodotti')?'block':'none';
+ ({spesa:renderSpesa,prodotti:renderProdotti,storico:renderStorico,impostazioni:renderSettings}[page])();
+}
+function renderSpesa(){
+ $('title').textContent='🛒 La mia spesa';
+ const n=data.lista.length, depts=[...new Set(data.lista.map(x=>x.reparto))];
+ let old=false, days=Number(data.impostazioni.giorni_avviso_lista)||7;
+ data.lista.forEach(x=>{if(x.dataInserimento && (Date.now()-new Date(x.dataInserimento))/86400000>days)old=true});
+ $('summary').innerHTML=`${n} ${n===1?'prodotto':'prodotti'} • ${depts.length} ${depts.length===1?'reparto':'reparti'} ${old?'<span class="badge old">lista da controllare</span>':''}`;
+ let h='';
+ if(data.suggerimenti.length){
+   h+='<div class="section">Potrebbero servirti</div><div class="card">';
+   data.suggerimenti.slice(0,5).forEach(x=>h+=`<div class="suggest"><div class="grow"><div class="name">${E(x.prodotto)}</div><div class="meta">Acquisto tipico ogni ${Math.round(x.intervallo)} gg • regolarità ${E(x.regolarita)}</div></div><button class="addmini" onclick="quickAdd('${E(x.id)}')">+ Aggiungi</button></div>`);
+   h+='</div>';
+ }
+ if(!n) h+='<div class="empty">La lista è vuota.<br>Direi che il supermercato può aspettare 😄</div>';
+ else{
+   let cur='';
+   data.lista.forEach(x=>{
+    if(x.reparto!==cur){cur=x.reparto;h+=`<div class="section">${E(cur)}</div>`}
+    h+=`<div class="card item"><button class="check" onclick="buy('${E(x.id)}')">✓</button><img class="thumb" data-id="${E(x.id)}" alt=""><div><div class="name">${E(x.prodotto)}</div><div class="meta">${E(x.confezione)} ${E(x.unitaMisura)}</div></div><div class="qty"><button class="qbtn" onclick="setQty('${E(x.id)}',${x.quantita-1})">−</button><span class="qnum">${x.quantita}</span><button class="qbtn" onclick="setQty('${E(x.id)}',${x.quantita+1})">+</button></div></div>`;
+   });
+ }
+ $('main').innerHTML=h; hydrateImages($('main'));
+}
+function renderProdotti(){
+ $('title').textContent='▦ Prodotti'; $('summary').textContent=`${data.catalogo.length} prodotti nel catalogo`;
+ $('main').innerHTML=`<input id="catSearch" class="search" placeholder="Cerca prodotto o reparto…"><div id="catList" class="card" style="margin-top:12px"></div>`;
+ $('catSearch').oninput=renderCatList;renderCatList();
+}
+function renderCatList(){
+ const q=($('catSearch')?.value||'').toLowerCase(), list=data.catalogo.filter(x=>!q||x.prodotto.toLowerCase().includes(q)||x.reparto.toLowerCase().includes(q)).slice(0,80);
+ $('catList').innerHTML=list.map(x=>`<div class="product-row"><img class="rthumb" data-id="${E(x.id)}"><div class="grow"><div class="name">${E(x.prodotto)}</div><div class="meta">${E(x.reparto)}</div></div><button class="addmini" onclick="quickAdd('${E(x.id)}')">+ Spesa</button></div>`).join('')||'<div class="empty">Nessun prodotto</div>';hydrateImages($('catList'));
+}
+function renderStorico(){
+ $('title').textContent='↺ Storico'; $('summary').textContent=`Ultimi ${data.storico.length} acquisti`;
+ $('main').innerHTML=`<input id="histSearch" class="search" placeholder="Cerca nello storico…"><div id="histList" class="card" style="margin-top:12px"></div>`;
+ $('histSearch').oninput=renderHistList;renderHistList();
+}
+function renderHistList(){
+ const q=($('histSearch')?.value||'').toLowerCase(), a=data.storico.filter(x=>!q||x.prodotto.toLowerCase().includes(q)||x.reparto.toLowerCase().includes(q));
+ $('histList').innerHTML=a.map(x=>`<div class="history-row"><div class="grow"><div class="name">${E(x.prodotto)}</div><div class="meta">${fmtDate(x.data)} • ${E(x.reparto)} • q.tà ${x.quantita}</div></div><button class="addmini" onclick="quickAdd('${E(x.id)}')">+ Riprendi</button></div>`).join('')||'<div class="empty">Nessun acquisto trovato</div>';
+}
+function renderSettings(){
+ $('title').textContent='⚙ Impostazioni'; $('summary').textContent='Ordine reparti e comportamento dell’app';
+ let h='<div class="section">Ordine dei reparti</div><div class="card" id="deptList">';
+ data.reparti.filter(x=>x.attivo).forEach((x,i)=>h+=`<div class="dept-row" data-name="${E(x.reparto)}"><div class="grow"><div class="settings-title">${E(x.icona)} ${E(x.reparto)}</div></div><button class="iconbtn" onclick="moveDept(${i},-1)">↑</button><button class="iconbtn" onclick="moveDept(${i},1)">↓</button></div>`);
+ h+='</div><div class="hint">L’ordine qui sopra è quello usato nella schermata Spesa. Sistemalo come incontri i reparti nel tuo supermercato.</div>';
+ h+=`<div class="section">Suggerimenti</div><div class="card"><div class="product-row"><div class="grow"><div class="settings-title">Soglia suggerimento</div><div class="hint">Attualmente ${E(data.impostazioni.soglia_suggerimento||'0,85')}: il prodotto viene suggerito quando si avvicina al suo intervallo abituale.</div></div></div><div class="product-row"><div class="grow"><div class="settings-title">Avviso lista vecchia</div><div class="hint">${E(data.impostazioni.giorni_avviso_lista||7)} giorni.</div></div></div></div>`;
+ $('main').innerHTML=h;
+}
+function moveDept(i,d){
+ const a=data.reparti.filter(x=>x.attivo), j=i+d;if(j<0||j>=a.length)return;[a[i],a[j]]=[a[j],a[i]];
+ const inactive=data.reparti.filter(x=>!x.attivo);data.reparti=[...a,...inactive];renderSettings();
+ google.script.run.withFailureHandler(e=>toast('Errore: '+e.message)).salvaOrdineReparti(a.map(x=>x.reparto));
+}
+function setQty(id,q){if(q<1)return removeItem(id);google.script.run.withSuccessHandler(()=>refresh()).withFailureHandler(e=>toast('Errore: '+e.message)).aggiornaQuantita(id,q,'Massimiliano','webapp')}
+function removeItem(id){if(!confirm('Rimuovere il prodotto dalla lista?'))return;google.script.run.withSuccessHandler(()=>refresh('Rimosso')).rimuoviProdotto(id,'Massimiliano','webapp')}
+function buy(id){google.script.run.withSuccessHandler(()=>refresh('Acquistato ✓')).withFailureHandler(e=>toast('Errore: '+e.message)).segnaAcquistato(id,'Massimiliano','webapp')}
+function quickAdd(id){google.script.run.withSuccessHandler(r=>refresh((r.prodotto||'Prodotto')+' aggiunto')).withFailureHandler(e=>toast('Errore: '+e.message)).aggiungiProdotto(id,1,'Massimiliano','webapp')}
+function openAdd(){selectedProduct=null;$('productName').value='';$('productQty').value=1;$('addDlg').showModal();renderAddResults('');setTimeout(()=>$('productName').focus(),50)}
+function renderAddResults(q){
+ q=(q||'').toLowerCase().trim();const a=data.catalogo.filter(x=>!q||x.prodotto.toLowerCase().includes(q)||x.reparto.toLowerCase().includes(q)).slice(0,20);
+ $('productResults').innerHTML=a.map(x=>`<div class="result ${selectedProduct?.id===x.id?'selected':''}" data-p="${E(x.id)}"><img class="rthumb" data-id="${E(x.id)}"><div><div class="name">${E(x.prodotto)}</div><div class="meta">${E(x.reparto)}</div></div></div>`).join('');
+ $('productResults').querySelectorAll('[data-p]').forEach(el=>el.onclick=()=>{selectedProduct=data.catalogo.find(x=>x.id===el.dataset.p);$('productName').value=selectedProduct.prodotto;$('productQty').value=1;renderAddResults(selectedProduct.prodotto)});hydrateImages($('productResults'));
+}
+function addProduct(){const p=selectedProduct?.id||$('productName').value.trim(),q=Math.max(1,Number($('productQty').value)||1);if(!p)return toast('Scegli un prodotto');google.script.run.withSuccessHandler(r=>{$('addDlg').close();refresh((r.prodotto||'Prodotto')+' aggiunto')}).withFailureHandler(e=>toast('Errore: '+e.message)).aggiungiProdotto(p,q,'Massimiliano','webapp')}
+$('productName').addEventListener('input',e=>{selectedProduct=null;renderAddResults(e.target.value)});
+document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{page=b.dataset.page;render()});
+refresh();
+if('serviceWorker' in navigator) navigator.serviceWorker.register('./service-worker.js');
+</script></body></html>
