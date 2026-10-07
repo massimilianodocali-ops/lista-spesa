@@ -69,7 +69,7 @@ function runner_(){
 Object.defineProperty(google.script,'run',{get(){return runner_()}});
 
 const $=id=>document.getElementById(id), E=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const API='https://script.google.com/macros/s/AKfycbyCoXinYitqxDUaAkHvr8XHnBn3qxFHtvlAQ8qmOa--EbHsYjCnXLQtGdRRcqMGYCNS/exec';
+const API='https://lista-spesa-api.massimiliano-docali.workers.dev/';
 let data={lista:[],catalogo:[],storico:[],suggerimenti:[],reparti:[],impostazioni:{}}, page='spesa', selectedProduct=null, imageCache={};
 function toast(s){const t=$('toast');t.textContent=s;t.style.display='block';setTimeout(()=>t.style.display='none',1800)}
 function fmtDate(s){if(!s)return '';const d=new Date(s);return isNaN(d)?s:d.toLocaleDateString('it-IT')}
