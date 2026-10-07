@@ -51,7 +51,13 @@ function runner_(){
  let ok=null,fail=null;
  const r={
   withSuccessHandler(fn){ok=fn;return r}, withFailureHandler(fn){fail=fn;return r},
-  getBootstrap(){callApi_('bootstrap',{},ok,fail)},
+  getBootstrap(){
+    const u=new URL(API); u.searchParams.set('action','bootstrap');
+    fetch(u).then(r=>r.json()).then(j=>{
+      if(j.ok===false) throw new Error(j.errore||j.error||'Errore API');
+      ok&&ok(j.data);
+    }).catch(e=>fail&&fail(e));
+  },
   getImmagineProdotto(id){callApi_('image',{id},x=>ok&&ok(x.src),fail)},
   aggiungiProdotto(id,q){callApi_('add',{id,q},ok,fail)},
   aggiornaQuantita(id,q){callApi_('qty',{id,q},ok,fail)},
