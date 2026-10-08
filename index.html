@@ -24,8 +24,9 @@ dialog{border:0;border-radius:20px;width:min(92vw,520px);padding:0;box-shadow:0 
 .iconbtn{border:0;background:#f0f2f4;border-radius:10px;padding:8px 10px;font-weight:800}.danger{color:var(--danger)}
 .settings-title{font-weight:800}.hint{font-size:12px;color:var(--muted);line-height:1.35}.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:88px;background:#222;color:#fff;padding:10px 14px;border-radius:12px;z-index:50;display:none}
 .badge{display:inline-block;background:#eef1f4;border-radius:999px;padding:4px 8px;font-size:12px;font-weight:750}.old{background:#fff2cc}
+#syncStatus{margin-top:8px;border:1px solid var(--line);border-radius:9px;background:#fff;color:#375d83;font-size:13px;padding:7px 11px;min-height:34px;cursor:pointer}#syncStatus:disabled{opacity:.65}
 </style></head><body>
-<header><h1 id="title">🛒 La mia spesa</h1><div id="summary" class="sub"></div></header>
+<header><h1 id="title">🛒 La mia spesa</h1><div id="summary" class="sub"></div><button id="syncStatus" type="button" onclick="refresh()" aria-label="Aggiorna la lista">↻ Aggiorna</button></header>
 <main id="main"></main>
 <button id="fab" class="fab" onclick="openAdd()">+</button>
 <nav>
@@ -73,12 +74,73 @@ const API='https://lista-spesa-api.massimiliano-docali.workers.dev/';
 let data={lista:[],catalogo:[],storico:[],suggerimenti:[],reparti:[],impostazioni:{}}, page='spesa', selectedProduct=null, imageCache={};
 function toast(s){const t=$('toast');t.textContent=s;t.style.display='block';setTimeout(()=>t.style.display='none',1800)}
 function fmtDate(s){if(!s)return '';const d=new Date(s);return isNaN(d)?s:d.toLocaleDateString('it-IT')}
-function loadImage(img,id){if(!id)return;if(imageCache[id]){img.src=imageCache[id];return}google.script.run.withSuccessHandler(src=>{if(src){imageCache[id]=src;img.src=src}}).getImmagineProdotto(id)}
+// Memorizza i dati per mostrare subito la lista all'apertura.
+const DATA_CACHE_KEY='spesa-bootstrap-v2';
+let lastSync=0, syncing=false, pendingRefresh=false;
+try { lastSync=Number(localStorage.getItem('spesa-last-sync')||0); } catch(e) {}
+try {
+  const saved=localStorage.getItem(DATA_CACHE_KEY);
+  if(saved){const parsed=JSON.parse(saved);if(parsed && Array.isArray(parsed.lista) && Array.isArray(parsed.catalogo)) data=parsed;}
+} catch(e) { /* Memoria non disponibile: funzionamento normale */ }
+
+// Le foto vengono conservate in IndexedDB (adatta anche a immagini grandi).
+const imageDB=new Promise(resolve=>{
+  if(!('indexedDB' in window)) return resolve(null);
+  try {
+    const r=indexedDB.open('spesa-foto-v1',1);
+    r.onupgradeneeded=()=>r.result.createObjectStore('foto');
+    r.onsuccess=()=>resolve(r.result);
+    r.onerror=()=>resolve(null);
+  } catch(e){resolve(null)}
+});
+async function cachedPhoto(id){
+  const db=await imageDB;if(!db)return null;
+  return new Promise(resolve=>{try{const r=db.transaction('foto','readonly').objectStore('foto').get(id);r.onsuccess=()=>resolve(r.result||null);r.onerror=()=>resolve(null)}catch(e){resolve(null)}});
+}
+async function storePhoto(id,src){
+  const db=await imageDB;if(!db)return;
+  try{db.transaction('foto','readwrite').objectStore('foto').put(src,id)}catch(e){}
+}
+const imageRequests=new Map();
+async function loadImage(img,id){
+  if(!id)return;
+  if(imageCache[id]){img.src=imageCache[id];return}
+  const cached=await cachedPhoto(id);
+  if(cached){imageCache[id]=cached;img.src=cached;return}
+  if(!imageRequests.has(id)){
+    imageRequests.set(id,new Promise(resolve=>{
+      google.script.run.withSuccessHandler(src=>{if(src){imageCache[id]=src;storePhoto(id,src)}resolve(src||null)}).withFailureHandler(()=>resolve(null)).getImmagineProdotto(id);
+    }).finally(()=>imageRequests.delete(id)));
+  }
+  const src=await imageRequests.get(id);
+  if(src && img.isConnected && img.dataset.id===id)img.src=src;
+}
 function hydrateImages(root=document){root.querySelectorAll('img[data-id]').forEach(x=>loadImage(x,x.dataset.id))}
-function refresh(msg){google.script.run.withSuccessHandler(x=>{data=x;render();if(msg)toast(msg)}).withFailureHandler(e=>toast('Errore: '+e.message)).getBootstrap()}
+function updateSyncIndicator(){
+ const el=$('syncStatus'); if(!el)return;
+ el.textContent=syncing?'↻ Aggiornamento…':lastSync?'↻ Aggiorna · '+new Date(lastSync).toLocaleString('it-IT',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'↻ Aggiorna';
+ el.disabled=syncing;
+}
+function refresh(msg){
+ if(syncing){pendingRefresh=true;return}
+ syncing=true;updateSyncIndicator();
+ google.script.run.withSuccessHandler(x=>{
+   syncing=false;
+   if(!x || !Array.isArray(x.lista)){updateSyncIndicator();return toast('Dati non validi')}
+   data=x;lastSync=Date.now();
+   try{localStorage.setItem(DATA_CACHE_KEY,JSON.stringify(x));localStorage.setItem('spesa-last-sync',String(lastSync))}catch(e){}
+   render();if(msg)toast(msg);
+   if(pendingRefresh){pendingRefresh=false;refresh()}
+ }).withFailureHandler(e=>{
+   syncing=false;updateSyncIndicator();toast('Aggiornamento non riuscito: '+e.message);
+   if(pendingRefresh){pendingRefresh=false;refresh()}
+ }).getBootstrap();
+}
+
 function render(){
  document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.page===page));
  $('fab').style.display=(page==='spesa'||page==='prodotti')?'block':'none';
+ updateSyncIndicator();
  ({spesa:renderSpesa,prodotti:renderProdotti,storico:renderStorico,impostazioni:renderSettings}[page])();
 }
 function renderSpesa(){
@@ -147,6 +209,7 @@ function renderAddResults(q){
 function addProduct(){const p=selectedProduct?.id||$('productName').value.trim(),q=Math.max(1,Number($('productQty').value)||1);if(!p)return toast('Scegli un prodotto');google.script.run.withSuccessHandler(r=>{$('addDlg').close();refresh((r.prodotto||'Prodotto')+' aggiunto')}).withFailureHandler(e=>toast('Errore: '+e.message)).aggiungiProdotto(p,q,'Massimiliano','webapp')}
 $('productName').addEventListener('input',e=>{selectedProduct=null;renderAddResults(e.target.value)});
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{page=b.dataset.page;render()});
-refresh();
+render(); // Mostra immediatamente l’ultima lista salvata
+refresh(); // Poi sincronizza i dati con Google Sheet
 if('serviceWorker' in navigator) navigator.serviceWorker.register('./service-worker.js');
 </script></body></html>
