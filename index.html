@@ -160,7 +160,7 @@ function renderSpesa(){
    let cur='';
    data.lista.forEach(x=>{
     if(x.reparto!==cur){cur=x.reparto;h+=`<div class="section">${E(cur)}</div>`}
-    h+=`<div class="card item"><button class="check" onclick="buy('${E(x.id)}')">✓</button><img class="thumb" data-id="${E(x.id)}" alt=""><div><div class="name">${E(x.prodotto)}</div><div class="meta">${E(x.confezione)} ${E(x.unitaMisura)}</div></div><div class="qty"><button class="qbtn" onclick="setQty('${E(x.id)}',${x.quantita-1})">−</button><span class="qnum">${x.quantita}</span><button class="qbtn" onclick="setQty('${E(x.id)}',${x.quantita+1})">+</button></div></div>`;
+    h+=`<div class="card item"><button class="check" onclick="buy('${E(x.id)}')">✓</button><img class="thumb" data-id="${E(x.id)}" alt=""><div><div class="name">${E(x.prodotto)}</div><div class="meta">${E(x.confezione)}</div></div><div class="qty"><button class="qbtn" onclick="setQty('${E(x.id)}',${x.quantita-1})">−</button><span class="qnum">${x.quantita}</span><button class="qbtn" onclick="setQty('${E(x.id)}',${x.quantita+1})">+</button></div></div>`;
    });
  }
  $('main').innerHTML=h; hydrateImages($('main'));
@@ -172,7 +172,7 @@ function renderProdotti(){
 }
 function renderCatList(){
  const q=($('catSearch')?.value||'').toLowerCase(), list=data.catalogo.filter(x=>!q||x.prodotto.toLowerCase().includes(q)||x.reparto.toLowerCase().includes(q)).slice(0,80);
- $('catList').innerHTML=list.map(x=>`<div class="product-row"><img class="rthumb" data-id="${E(x.id)}"><div class="grow"><div class="name">${E(x.prodotto)}</div><div class="meta">${E(x.reparto)} · ${E(x.unitaMisura||'pezzi')}</div></div><button class="iconbtn" onclick="editProduct('${E(x.id)}')">✎</button><button class="addmini" onclick="quickAdd('${E(x.id)}')">+ Spesa</button></div>`).join('')||'<div class="empty">Nessun prodotto</div>';hydrateImages($('catList'));
+ $('catList').innerHTML=list.map(x=>`<div class="product-row"><img class="rthumb" data-id="${E(x.id)}"><div class="grow"><div class="name">${E(x.prodotto)}</div><div class="meta">${E(x.reparto)}${x.confezione?' · '+E(x.confezione):''}</div></div><button class="iconbtn" onclick="editProduct('${E(x.id)}')">✎</button><button class="addmini" onclick="quickAdd('${E(x.id)}')">+ Spesa</button></div>`).join('')||'<div class="empty">Nessun prodotto</div>';hydrateImages($('catList'));
 }
 function renderStorico(){
  $('title').textContent='↺ Storico'; $('summary').textContent=`Ultimi ${data.storico.length} acquisti`;
@@ -217,17 +217,46 @@ function newFromSearch(){const name=formValue('productName');$('addDlg').close()
 function editProduct(id=null,preset=''){
  const p=id?data.catalogo.find(x=>x.id===id):null;
  const opts=data.reparti.filter(x=>x.attivo).map(x=>`<option value="${E(x.reparto)}" ${p?.reparto===x.reparto?'selected':''}>${E(x.reparto)}</option>`).join('');
- $('editContent').innerHTML=`<h2>${p?'Modifica':'Nuovo'} prodotto</h2><label>Nome</label><input id="edName" value="${E(p?.prodotto||preset)}" placeholder="Nome prodotto"><label>Reparto</label><select id="edDept" class="search" style="margin-bottom:10px">${opts}</select><label>Unità di misura</label><input id="edUnit" list="units" value="${E(p?.unitaMisura||'pezzi')}" placeholder="es. grammi"><datalist id="units"><option value="pezzi"><option value="grammi"><option value="kg"><option value="litri"><option value="ml"><option value="sacchetti"><option value="scatole"><option value="confezioni"><option value="bottiglie"></datalist><label>Confezione (facoltativa)</label><input id="edPack" value="${E(p?.confezione||'')}" placeholder="es. da 500 g"><label>Quantità da aggiungere alla lista</label><input id="edQty" type="number" min="1" step="any" value="1"><label style="display:block;margin-bottom:14px"><input id="edAdd" type="checkbox" ${p?'':'checked'} style="width:auto;margin:0"> Aggiungi alla lista della spesa</label><div class="actions">${p?`<button class="btn danger" onclick="deleteCatalogProduct('${E(p.id)}')">Elimina</button>`:''}<button class="btn" onclick="$('editDlg').close()">Annulla</button><button class="btn primary" onclick="saveCatalogProduct('${E(p?.id||'')}')">Salva</button></div>`;
+ $('editContent').innerHTML=`<h2>${p?'Modifica':'Nuovo'} prodotto</h2><label>Nome</label><input id="edName" value="${E(p?.prodotto||preset)}" placeholder="Nome prodotto"><label>Reparto</label><select id="edDept" class="search" style="margin-bottom:10px">${opts}</select><label>Confezione (facoltativa)</label><input id="edPack" value="${E(p?.confezione||'')}" placeholder="es. da 500 g"><label>Foto del prodotto (facoltativa)</label><div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap"><img id="edPhotoPreview" alt="Anteprima foto" style="width:64px;height:64px;object-fit:cover;border-radius:10px;background:#eef0f2;display:none"><label class="btn" style="cursor:pointer">📷 Scatta o scegli foto<input id="edPhoto" type="file" accept="image/*" style="display:none" onchange="previewProductPhoto(this)"></label><button id="edPhotoRemove" class="btn danger" type="button" style="display:${p?.immagine?'inline-block':'none'}" onclick="removeProductPhoto()">Elimina foto</button></div><div class="hint" style="margin-bottom:12px">La foto viene ridimensionata automaticamente.</div><label>Quantità da aggiungere alla lista</label><input id="edQty" type="number" min="1" step="any" value="1"><label style="display:block;margin-bottom:14px"><input id="edAdd" type="checkbox" ${p?'':'checked'} style="width:auto;margin:0"> Aggiungi alla lista della spesa</label><div class="actions">${p?`<button class="btn danger" onclick="deleteCatalogProduct('${E(p.id)}')">Elimina</button>`:''}<button class="btn" onclick="$('editDlg').close()">Annulla</button><button class="btn primary" onclick="saveCatalogProduct('${E(p?.id||'')}')">Salva</button></div>`;
+ photoToUpload=null;photoRemove=false;
  $('editDlg').showModal();
+ if(p?.immagine){const img=$('edPhotoPreview');img.style.display='block';loadImage(img,p.id);}
+}
+let photoToUpload=null,photoRemove=false;
+function removeProductPhoto(){photoToUpload=null;photoRemove=true;$('edPhoto').value='';$('edPhotoPreview').style.display='none';$('edPhotoRemove').style.display='none';}
+function previewProductPhoto(input){
+ const file=input.files?.[0];if(!file)return;
+ photoRemove=false;
+ if(!file.type.startsWith('image/'))return toast('Scegli una foto valida');
+ const img=new Image();const url=URL.createObjectURL(file);
+ img.onload=()=>{
+  const scale=Math.min(1,900/Math.max(img.width,img.height));
+  const c=document.createElement('canvas');c.width=Math.max(1,Math.round(img.width*scale));c.height=Math.max(1,Math.round(img.height*scale));
+  c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+  const src=c.toDataURL('image/jpeg',0.72);URL.revokeObjectURL(url);
+  photoToUpload=src.split(',')[1];$('edPhotoPreview').src=src;$('edPhotoPreview').style.display='block';$('edPhotoRemove').style.display='inline-block';
+ };
+ img.onerror=()=>{URL.revokeObjectURL(url);toast('Impossibile leggere la foto')};img.src=url;
+}
+async function sendProductPhoto(id){
+ if(!photoToUpload&&!photoRemove)return;
+ const payload=photoRemove?{action:'photo',id,remove:true}:{action:'photo',id,base64:photoToUpload};
+ const res=await fetch(API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+ const json=await res.json();if(!json.ok)throw new Error(json.errore||'Errore caricamento foto');
+ delete imageCache[id];
+ try{const db=await imageDB;if(db){const tx=db.transaction('foto','readwrite');tx.objectStore('foto').delete(id)}}catch(e){}
 }
 function saveCatalogProduct(id){
- const p={id,prodotto:formValue('edName'),reparto:formValue('edDept'),unitaMisura:formValue('edUnit'),confezione:formValue('edPack')};
+ const p={id,prodotto:formValue('edName'),reparto:formValue('edDept'),confezione:formValue('edPack')};
  if(!p.prodotto||!p.reparto)return toast('Indica nome e reparto');
  const add=$('edAdd').checked,q=Number(formValue('edQty'))||1;
- callApi_('saveProduct',{payload:JSON.stringify(p)},r=>{
-  $('editDlg').close();
-  if(add)callApi_('add',{id:r.id,q},()=>refresh('Prodotto salvato e aggiunto'),e=>refresh('Prodotto salvato; errore aggiunta: '+e.message));
-  else refresh('Prodotto salvato');
+ callApi_('saveProduct',{payload:JSON.stringify(p)},async r=>{
+  try{
+   await sendProductPhoto(r.id);
+   $('editDlg').close();
+   if(add)callApi_('add',{id:r.id,q},()=>refresh('Prodotto salvato e aggiunto'),e=>refresh('Prodotto salvato; errore aggiunta: '+e.message));
+   else refresh('Prodotto salvato');
+  }catch(e){refresh('Prodotto salvato, ma foto non caricata: '+e.message);}
  },e=>toast('Errore: '+e.message));
 }
 function deleteCatalogProduct(id){
