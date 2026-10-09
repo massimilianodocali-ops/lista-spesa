@@ -8,7 +8,7 @@ h1{font-size:24px;margin:0 0 3px}.sub{font-size:13px;color:var(--muted)}main{pad
 .search{width:100%;border:1px solid var(--line);background:#fff;border-radius:14px;padding:12px 14px;font-size:16px;outline:none}
 .section{margin:17px 0 8px;font-size:13px;font-weight:800;color:#555c65;text-transform:uppercase;letter-spacing:.04em}
 .card{background:#fff;border:1px solid var(--line);border-radius:16px;margin-bottom:9px;overflow:hidden}
-.item{display:grid;grid-template-columns:44px 50px minmax(0,1fr) auto;gap:9px;align-items:center;padding:10px;touch-action:pan-y;transition:transform .15s ease}.item .item-name{min-width:0}.item .item-name .name{overflow-wrap:anywhere}.item-actions{display:flex;flex-direction:column;align-items:flex-end;gap:6px}.remove-list{border:0;background:#fff0f0;color:var(--danger);border-radius:8px;font-size:12px;font-weight:750;padding:6px 9px}.swipe-hint{font-size:11px;color:var(--muted);margin:0 0 8px;text-align:right}
+.item{display:grid;grid-template-columns:44px 50px minmax(0,1fr) auto;gap:9px;align-items:center;padding:10px;touch-action:pan-y;transition:transform .15s ease}.item .item-name{min-width:0}.item .item-name .name{overflow-wrap:anywhere}.item-actions{display:flex;flex-direction:column;align-items:flex-end;gap:6px}.swipe-hint{font-size:11px;color:var(--muted);margin:0 0 8px;text-align:right}
 /* Feedback visivo per acquisto (destra) ed eliminazione (sinistra) */
 .swipe-shell{position:relative;border-radius:16px;margin-bottom:9px;overflow:hidden;background:#198754}
 .swipe-back{position:absolute;inset:0;display:flex;align-items:center;gap:9px;padding:0 18px;color:white;font-weight:800;font-size:15px;pointer-events:none}.swipe-back.delete{justify-content:flex-end;background:#c73737;opacity:0}.swipe-shell.swipe-left{background:#c73737}.swipe-shell.swipe-left .swipe-back.buy{opacity:0}.swipe-shell.swipe-left .swipe-back.delete{opacity:1}
@@ -170,7 +170,7 @@ function renderSpesa(){
    h+='<div class="swipe-hint">← Elimina · Acquistato →</div>';
    data.lista.forEach(x=>{
     if(x.reparto!==cur){cur=x.reparto;h+=`<div class="section">${E(cur)}</div>`}
-    h+=`<div class="swipe-shell" data-swipe-buy="${E(x.id)}"><div class="swipe-back buy"><span class="swipe-tick">✓</span> Acquistato</div><div class="swipe-back delete">Elimina <span class="swipe-tick">✕</span></div><div class="card item"><button class="check" aria-label="Segna ${E(x.prodotto)} acquistato" onclick="buy('${E(x.id)}')">✓</button><img class="thumb" data-id="${E(x.id)}" alt=""><div class="item-name"><div class="name">${E(x.prodotto)}</div><div class="meta">${E(x.confezione)}</div></div><div class="item-actions"><div class="qty"><button class="qbtn" onclick="setQty('${E(x.id)}',${x.quantita-1})">−</button><span class="qnum">${x.quantita}</span><button class="qbtn" onclick="setQty('${E(x.id)}',${x.quantita+1})">+</button></div><button class="remove-list" onclick="removeItem('${E(x.id)}')">Elimina</button></div></div></div>`;
+    h+=`<div class="swipe-shell" data-swipe-buy="${E(x.id)}"><div class="swipe-back buy"><span class="swipe-tick">✓</span> Acquistato</div><div class="swipe-back delete">Elimina <span class="swipe-tick">✕</span></div><div class="card item"><button class="check" aria-label="Segna ${E(x.prodotto)} acquistato" onclick="buy('${E(x.id)}')">✓</button><img class="thumb" data-id="${E(x.id)}" alt=""><div class="item-name"><div class="name">${E(x.prodotto)}</div><div class="meta">${E(x.confezione)}</div></div><div class="item-actions"><div class="qty"><button class="qbtn" onclick="setQty('${E(x.id)}',${x.quantita-1})">−</button><span class="qnum">${x.quantita}</span><button class="qbtn" onclick="setQty('${E(x.id)}',${x.quantita+1})">+</button></div></div></div></div>`;
    });
  }
  $('main').innerHTML=h; hydrateImages($('main')); installSwipeBuy();
@@ -284,14 +284,37 @@ function mutateList(id,action){
 }
 function removeItem(id){mutateList(id,'remove')}
 function buy(id){mutateList(id,'buy')}
-function quickAdd(id){google.script.run.withSuccessHandler(r=>refresh((r.prodotto||'Prodotto')+' aggiunto')).withFailureHandler(e=>toast('Errore: '+e.message)).aggiungiProdotto(id,1,'Massimiliano','webapp')}
+// Aggiunta ottimistica: aggiorna subito la lista e salva in background.
+// La coda per prodotto conserva l'ordine di aggiunte e variazioni di quantità.
+function addInstant(id,q=1){
+ const product=data.catalogo.find(x=>String(x.id)===String(id));
+ if(!product){toast('Seleziona un prodotto dal catalogo');return false}
+ const amount=Math.max(1,Number(q)||1);
+ let item=data.lista.find(x=>String(x.id)===String(id));
+ if(item)item.quantita=(Number(item.quantita)||0)+amount;
+ else data.lista.push({id:String(product.id),prodotto:product.prodotto,reparto:product.reparto||'Altro',quantita:amount,confezione:product.confezione||'',immagine:product.immagine||'',dataInserimento:new Date().toISOString()});
+ // Rimuovi l'eventuale suggerimento già presente, senza attendere il server.
+ data.suggerimenti=data.suggerimenti.filter(x=>String(x.id)!==String(id));
+ persistLocal();
+ if(page==='spesa')renderSpesa();
+ else if(page==='prodotti')renderCatList();
+ toast(product.prodotto+' aggiunto ✓');
+ enqueueMutation(String(id),'add',{id,q:amount});
+ return true;
+}
+function quickAdd(id){addInstant(id,1)}
 function openAdd(){selectedProduct=null;$('productName').value='';$('productQty').value=1;$('addDlg').showModal();renderAddResults('');setTimeout(()=>$('productName').focus(),50)}
 function renderAddResults(q){
  q=(q||'').toLowerCase().trim();const a=data.catalogo.filter(x=>!q||x.prodotto.toLowerCase().includes(q)||x.reparto.toLowerCase().includes(q)).slice(0,20);
  $('productResults').innerHTML=a.map(x=>`<div class="result ${selectedProduct?.id===x.id?'selected':''}" data-p="${E(x.id)}"><img class="rthumb" data-id="${E(x.id)}"><div><div class="name">${E(x.prodotto)}</div><div class="meta">${E(x.reparto)}</div></div></div>`).join('');
  $('productResults').querySelectorAll('[data-p]').forEach(el=>el.onclick=()=>{selectedProduct=data.catalogo.find(x=>x.id===el.dataset.p);$('productName').value=selectedProduct.prodotto;$('productQty').value=1;renderAddResults(selectedProduct.prodotto)});hydrateImages($('productResults'));
 }
-function addProduct(){const p=selectedProduct?.id||$('productName').value.trim(),q=Math.max(1,Number($('productQty').value)||1);if(!p)return toast('Scegli un prodotto');google.script.run.withSuccessHandler(r=>{$('addDlg').close();refresh((r.prodotto||'Prodotto')+' aggiunto')}).withFailureHandler(e=>toast('Errore: '+e.message)).aggiungiProdotto(p,q,'Massimiliano','webapp')}
+function addProduct(){
+ const text=$('productName').value.trim(),q=Math.max(1,Number($('productQty').value)||1);
+ const p=selectedProduct || data.catalogo.find(x=>x.prodotto.toLocaleLowerCase('it')===text.toLocaleLowerCase('it'));
+ if(!p)return toast('Scegli un prodotto dal catalogo');
+ $('addDlg').close();page='spesa';addInstant(p.id,q);render();
+}
 
 // Nuove funzioni di gestione
 function formValue(id){return $(id)?.value?.trim()||''}
