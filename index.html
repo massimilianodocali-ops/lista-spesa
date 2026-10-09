@@ -225,7 +225,7 @@ function renderProdotti(){
  $('catSearch').oninput=renderCatList;renderCatList();
 }
 function renderCatList(){
- const q=($('catSearch')?.value||'').toLowerCase(), list=data.catalogo.filter(x=>!q||x.prodotto.toLowerCase().includes(q)||x.reparto.toLowerCase().includes(q)).slice(0,80);
+ const q=($('catSearch')?.value||'').toLowerCase(), list=data.catalogo.filter(x=>!q||x.prodotto.toLowerCase().includes(q)||x.reparto.toLowerCase().includes(q));
  $('catList').innerHTML=list.map(x=>`<div class="product-row"><img class="rthumb" data-id="${E(x.id)}"><div class="grow"><div class="name">${E(x.prodotto)}</div><div class="meta">${E(x.reparto)}${x.confezione?' · '+E(x.confezione):''}</div></div><button class="iconbtn" onclick="editProduct('${E(x.id)}')">✎</button><button class="addmini" onclick="quickAdd('${E(x.id)}')">+ Spesa</button></div>`).join('')||'<div class="empty">Nessun prodotto</div>';hydrateImages($('catList'));
 }
 function renderStorico(){
