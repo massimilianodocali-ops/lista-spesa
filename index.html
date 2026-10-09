@@ -9,6 +9,13 @@ h1{font-size:24px;margin:0 0 3px}.sub{font-size:13px;color:var(--muted)}main{pad
 .section{margin:17px 0 8px;font-size:13px;font-weight:800;color:#555c65;text-transform:uppercase;letter-spacing:.04em}
 .card{background:#fff;border:1px solid var(--line);border-radius:16px;margin-bottom:9px;overflow:hidden}
 .item{display:grid;grid-template-columns:44px 50px minmax(0,1fr) auto;gap:9px;align-items:center;padding:10px;touch-action:pan-y;transition:transform .15s ease}.item .item-name{min-width:0}.item .item-name .name{overflow-wrap:anywhere}.item-actions{display:flex;flex-direction:column;align-items:flex-end;gap:6px}.remove-list{border:0;background:#fff0f0;color:var(--danger);border-radius:8px;font-size:12px;font-weight:750;padding:6px 9px}.swipe-hint{font-size:11px;color:var(--muted);margin:0 0 8px;text-align:right}
+/* Feedback visivo per acquisto (destra) ed eliminazione (sinistra) */
+.swipe-shell{position:relative;border-radius:16px;margin-bottom:9px;overflow:hidden;background:#198754}
+.swipe-back{position:absolute;inset:0;display:flex;align-items:center;gap:9px;padding:0 18px;color:white;font-weight:800;font-size:15px;pointer-events:none}.swipe-back.delete{justify-content:flex-end;background:#c73737;opacity:0}.swipe-shell.swipe-left{background:#c73737}.swipe-shell.swipe-left .swipe-back.buy{opacity:0}.swipe-shell.swipe-left .swipe-back.delete{opacity:1}
+.swipe-back .swipe-tick{font-size:25px}
+.swipe-shell .item{position:relative;margin:0;border-radius:16px;will-change:transform;touch-action:pan-y;transition:none;background:white}
+.swipe-shell.swipe-ready .swipe-back{background:#147545}
+.swipe-shell.swipe-done{transition:max-height .22s ease,opacity .22s ease,margin .22s ease;max-height:110px}
 .thumb,.rthumb{width:46px;height:46px;border-radius:11px;object-fit:cover;background:#eef0f2}.name{font-weight:750}.meta{font-size:12px;color:var(--muted);margin-top:2px}
 .check{width:40px;height:40px;border-radius:50%;border:0;background:#eaf7ef;color:var(--ok);font-size:20px;font-weight:900}.qty{display:flex;align-items:center;gap:5px}
 .qbtn{border:1px solid var(--line);background:#fff;border-radius:9px;width:31px;height:31px;font-size:18px}.qnum{min-width:22px;text-align:center;font-weight:800}
@@ -122,11 +129,13 @@ function updateSyncIndicator(){
  el.disabled=syncing;
 }
 function refresh(msg){
+ if(activeMutations>0){syncAfterMutations=true;return}
  if(syncing){pendingRefresh=true;return}
  syncing=true;updateSyncIndicator();
  google.script.run.withSuccessHandler(x=>{
    syncing=false;
    if(!x || !Array.isArray(x.lista)){updateSyncIndicator();return toast('Dati non validi')}
+   if(activeMutations>0){pendingRefresh=true;return}
    data=x;lastSync=Date.now();
    try{localStorage.setItem(DATA_CACHE_KEY,JSON.stringify(x));localStorage.setItem('spesa-last-sync',String(lastSync))}catch(e){}
    render();if(msg)toast(msg);
@@ -158,31 +167,56 @@ function renderSpesa(){
  if(!n) h+='<div class="empty">La lista è vuota.<br>Direi che il supermercato può aspettare 😄</div>';
  else{
    let cur='';
-   h+='<div class="swipe-hint">Scorri un prodotto verso destra per segnarlo acquistato →</div>';
+   h+='<div class="swipe-hint">← Elimina · Acquistato →</div>';
    data.lista.forEach(x=>{
     if(x.reparto!==cur){cur=x.reparto;h+=`<div class="section">${E(cur)}</div>`}
-    h+=`<div class="card item" data-swipe-buy="${E(x.id)}"><button class="check" aria-label="Segna ${E(x.prodotto)} acquistato" onclick="buy('${E(x.id)}')">✓</button><img class="thumb" data-id="${E(x.id)}" alt=""><div class="item-name"><div class="name">${E(x.prodotto)}</div><div class="meta">${E(x.confezione)}</div></div><div class="item-actions"><div class="qty"><button class="qbtn" onclick="setQty('${E(x.id)}',${x.quantita-1})">−</button><span class="qnum">${x.quantita}</span><button class="qbtn" onclick="setQty('${E(x.id)}',${x.quantita+1})">+</button></div><button class="remove-list" onclick="removeItem('${E(x.id)}')">Elimina</button></div></div>`;
+    h+=`<div class="swipe-shell" data-swipe-buy="${E(x.id)}"><div class="swipe-back buy"><span class="swipe-tick">✓</span> Acquistato</div><div class="swipe-back delete">Elimina <span class="swipe-tick">✕</span></div><div class="card item"><button class="check" aria-label="Segna ${E(x.prodotto)} acquistato" onclick="buy('${E(x.id)}')">✓</button><img class="thumb" data-id="${E(x.id)}" alt=""><div class="item-name"><div class="name">${E(x.prodotto)}</div><div class="meta">${E(x.confezione)}</div></div><div class="item-actions"><div class="qty"><button class="qbtn" onclick="setQty('${E(x.id)}',${x.quantita-1})">−</button><span class="qnum">${x.quantita}</span><button class="qbtn" onclick="setQty('${E(x.id)}',${x.quantita+1})">+</button></div><button class="remove-list" onclick="removeItem('${E(x.id)}')">Elimina</button></div></div></div>`;
    });
  }
  $('main').innerHTML=h; hydrateImages($('main')); installSwipeBuy();
 }
 function installSwipeBuy(){
- document.querySelectorAll('[data-swipe-buy]').forEach(el=>{
-  let startX=0,startY=0,tracking=false;
-  el.addEventListener('touchstart',ev=>{
-   if(ev.touches.length!==1 || ev.target.closest('button')){tracking=false;return}
-   startX=ev.touches[0].clientX;startY=ev.touches[0].clientY;tracking=true;
+ document.querySelectorAll('[data-swipe-buy]').forEach(shell=>{
+  const card=shell.querySelector('.item');
+  let startX=0,startY=0,dx=0,tracking=false,dragging=false,done=false;
+  const reset=()=>{
+   card.style.transition='transform .2s ease';card.style.transform='translateX(0px)';
+   shell.classList.remove('swipe-ready','swipe-left');
+  };
+  card.addEventListener('touchstart',ev=>{
+   if(done||ev.touches.length!==1||ev.target.closest('button')){tracking=false;return}
+   startX=ev.touches[0].clientX;startY=ev.touches[0].clientY;
+   dx=0;dragging=false;tracking=true;card.style.transition='none';
   },{passive:true});
-  el.addEventListener('touchend',ev=>{
-   if(!tracking || !ev.changedTouches.length)return;
-   tracking=false;
-   const dx=ev.changedTouches[0].clientX-startX;
-   const dy=ev.changedTouches[0].clientY-startY;
-   if(dx>95 && Math.abs(dx)>Math.abs(dy)*1.5){
-    if(confirm('Segnare questo prodotto come acquistato?'))buy(el.dataset.swipeBuy);
+  card.addEventListener('touchmove',ev=>{
+   if(!tracking||ev.touches.length!==1)return;
+   const x=ev.touches[0].clientX-startX, y=ev.touches[0].clientY-startY;
+   if(!dragging){
+    if(Math.abs(y)>12&&Math.abs(y)>Math.abs(x)){tracking=false;reset();return}
+    if(Math.abs(x)<8||Math.abs(x)<Math.abs(y)*1.25)return;
+    dragging=true;
    }
+   dx=x;card.style.transform=`translateX(${Math.max(-window.innerWidth,Math.min(dx,window.innerWidth))}px)`;
+   shell.classList.toggle('swipe-left',dx<0);
+   shell.classList.toggle('swipe-ready',Math.abs(dx)>=90);
+   if(ev.cancelable)ev.preventDefault();
+  },{passive:false});
+  card.addEventListener('touchend',()=>{
+   if(!tracking)return;
+   tracking=false;
+   if(!dragging||Math.abs(dx)<90){reset();return}
+   done=true;
+   const id=shell.dataset.swipeBuy, isBuy=dx>0;
+   card.style.transition='transform .22s ease';
+   card.style.transform=`translateX(${(isBuy?1:-1)*(Math.max(window.innerWidth,shell.offsetWidth)+40)}px)`;
+   setTimeout(()=>{
+    if(!shell.isConnected)return;
+    shell.style.maxHeight=shell.offsetHeight+'px';shell.classList.add('swipe-done');
+    requestAnimationFrame(()=>{shell.style.maxHeight='0px';shell.style.opacity='0';shell.style.marginBottom='0px'});
+   },190);
+   mutateList(id,isBuy?'buy':'remove');
   },{passive:true});
-  el.addEventListener('touchcancel',()=>{tracking=false},{passive:true});
+  card.addEventListener('touchcancel',()=>{tracking=false;if(!done)reset()},{passive:true});
  });
 }
 function renderProdotti(){
@@ -216,9 +250,40 @@ function moveDept(i,d){
  const inactive=data.reparti.filter(x=>!x.attivo);data.reparti=[...a,...inactive];renderSettings();
  google.script.run.withFailureHandler(e=>toast('Errore: '+e.message)).salvaOrdineReparti(a.map(x=>x.reparto));
 }
-function setQty(id,q){if(q<1)return removeItem(id);google.script.run.withSuccessHandler(()=>refresh()).withFailureHandler(e=>toast('Errore: '+e.message)).aggiornaQuantita(id,q,'Massimiliano','webapp')}
-function removeItem(id){if(!confirm('Rimuovere il prodotto dalla lista?'))return;google.script.run.withSuccessHandler(()=>refresh('Rimosso')).rimuoviProdotto(id,'Massimiliano','webapp')}
-function buy(id){google.script.run.withSuccessHandler(()=>refresh('Acquistato ✓')).withFailureHandler(e=>toast('Errore: '+e.message)).segnaAcquistato(id,'Massimiliano','webapp')}
+// Aggiornamento immediato: il telefono reagisce subito, il server salva in seguito.
+// Le richieste sullo stesso prodotto sono serializzate per non perdere tocchi rapidi.
+const mutationQueues=new Map();
+let activeMutations=0, syncAfterMutations=false;
+function persistLocal(){try{localStorage.setItem(DATA_CACHE_KEY,JSON.stringify(data))}catch(e){}}
+function enqueueMutation(id,action,params){
+ activeMutations++;
+ const previous=mutationQueues.get(id)||Promise.resolve();
+ const task=previous.catch(()=>{}).then(()=>new Promise((resolve,reject)=>{
+  callApi_(action,params,()=>resolve(),reject);
+ }));
+ mutationQueues.set(id,task);
+ task.catch(e=>{toast('Salvataggio non riuscito: '+e.message);syncAfterMutations=true})
+  .finally(()=>{
+   activeMutations--;
+   if(mutationQueues.get(id)===task)mutationQueues.delete(id);
+   if(activeMutations===0){syncAfterMutations=false;refresh()}
+  });
+}
+function setQty(id,q){
+ const item=data.lista.find(x=>String(x.id)===String(id));if(!item)return;
+ if(q<1)return mutateList(id,'remove');
+ // Usa il valore corrente anche se ci sono altre richieste ancora in viaggio.
+ item.quantita=q;
+ persistLocal();renderSpesa();
+ enqueueMutation(id,'qty',{id,q});
+}
+function mutateList(id,action){
+ const idx=data.lista.findIndex(x=>String(x.id)===String(id));if(idx<0)return;
+ data.lista.splice(idx,1);persistLocal();renderSpesa();
+ enqueueMutation(id,action,{id});
+}
+function removeItem(id){mutateList(id,'remove')}
+function buy(id){mutateList(id,'buy')}
 function quickAdd(id){google.script.run.withSuccessHandler(r=>refresh((r.prodotto||'Prodotto')+' aggiunto')).withFailureHandler(e=>toast('Errore: '+e.message)).aggiungiProdotto(id,1,'Massimiliano','webapp')}
 function openAdd(){selectedProduct=null;$('productName').value='';$('productQty').value=1;$('addDlg').showModal();renderAddResults('');setTimeout(()=>$('productName').focus(),50)}
 function renderAddResults(q){
