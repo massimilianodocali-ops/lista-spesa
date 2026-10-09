@@ -8,7 +8,7 @@ h1{font-size:24px;margin:0 0 3px}.sub{font-size:13px;color:var(--muted)}main{pad
 .search{width:100%;border:1px solid var(--line);background:#fff;border-radius:14px;padding:12px 14px;font-size:16px;outline:none}
 .section{margin:17px 0 8px;font-size:13px;font-weight:800;color:#555c65;text-transform:uppercase;letter-spacing:.04em}
 .card{background:#fff;border:1px solid var(--line);border-radius:16px;margin-bottom:9px;overflow:hidden}
-.item{display:grid;grid-template-columns:44px 50px 1fr auto;gap:9px;align-items:center;padding:10px}
+.item{display:grid;grid-template-columns:44px 50px minmax(0,1fr) auto;gap:9px;align-items:center;padding:10px;touch-action:pan-y;transition:transform .15s ease}.item .item-name{min-width:0}.item .item-name .name{overflow-wrap:anywhere}.item-actions{display:flex;flex-direction:column;align-items:flex-end;gap:6px}.remove-list{border:0;background:#fff0f0;color:var(--danger);border-radius:8px;font-size:12px;font-weight:750;padding:6px 9px}.swipe-hint{font-size:11px;color:var(--muted);margin:0 0 8px;text-align:right}
 .thumb,.rthumb{width:46px;height:46px;border-radius:11px;object-fit:cover;background:#eef0f2}.name{font-weight:750}.meta{font-size:12px;color:var(--muted);margin-top:2px}
 .check{width:40px;height:40px;border-radius:50%;border:0;background:#eaf7ef;color:var(--ok);font-size:20px;font-weight:900}.qty{display:flex;align-items:center;gap:5px}
 .qbtn{border:1px solid var(--line);background:#fff;border-radius:9px;width:31px;height:31px;font-size:18px}.qnum{min-width:22px;text-align:center;font-weight:800}
@@ -158,12 +158,32 @@ function renderSpesa(){
  if(!n) h+='<div class="empty">La lista è vuota.<br>Direi che il supermercato può aspettare 😄</div>';
  else{
    let cur='';
+   h+='<div class="swipe-hint">Scorri un prodotto verso destra per segnarlo acquistato →</div>';
    data.lista.forEach(x=>{
     if(x.reparto!==cur){cur=x.reparto;h+=`<div class="section">${E(cur)}</div>`}
-    h+=`<div class="card item"><button class="check" onclick="buy('${E(x.id)}')">✓</button><img class="thumb" data-id="${E(x.id)}" alt=""><div><div class="name">${E(x.prodotto)}</div><div class="meta">${E(x.confezione)}</div></div><div class="qty"><button class="qbtn" onclick="setQty('${E(x.id)}',${x.quantita-1})">−</button><span class="qnum">${x.quantita}</span><button class="qbtn" onclick="setQty('${E(x.id)}',${x.quantita+1})">+</button></div></div>`;
+    h+=`<div class="card item" data-swipe-buy="${E(x.id)}"><button class="check" aria-label="Segna ${E(x.prodotto)} acquistato" onclick="buy('${E(x.id)}')">✓</button><img class="thumb" data-id="${E(x.id)}" alt=""><div class="item-name"><div class="name">${E(x.prodotto)}</div><div class="meta">${E(x.confezione)}</div></div><div class="item-actions"><div class="qty"><button class="qbtn" onclick="setQty('${E(x.id)}',${x.quantita-1})">−</button><span class="qnum">${x.quantita}</span><button class="qbtn" onclick="setQty('${E(x.id)}',${x.quantita+1})">+</button></div><button class="remove-list" onclick="removeItem('${E(x.id)}')">Elimina</button></div></div>`;
    });
  }
- $('main').innerHTML=h; hydrateImages($('main'));
+ $('main').innerHTML=h; hydrateImages($('main')); installSwipeBuy();
+}
+function installSwipeBuy(){
+ document.querySelectorAll('[data-swipe-buy]').forEach(el=>{
+  let startX=0,startY=0,tracking=false;
+  el.addEventListener('touchstart',ev=>{
+   if(ev.touches.length!==1 || ev.target.closest('button')){tracking=false;return}
+   startX=ev.touches[0].clientX;startY=ev.touches[0].clientY;tracking=true;
+  },{passive:true});
+  el.addEventListener('touchend',ev=>{
+   if(!tracking || !ev.changedTouches.length)return;
+   tracking=false;
+   const dx=ev.changedTouches[0].clientX-startX;
+   const dy=ev.changedTouches[0].clientY-startY;
+   if(dx>95 && Math.abs(dx)>Math.abs(dy)*1.5){
+    if(confirm('Segnare questo prodotto come acquistato?'))buy(el.dataset.swipeBuy);
+   }
+  },{passive:true});
+  el.addEventListener('touchcancel',()=>{tracking=false},{passive:true});
+ });
 }
 function renderProdotti(){
  $('title').textContent='▦ Prodotti'; $('summary').textContent=`${data.catalogo.length} prodotti nel catalogo`;
