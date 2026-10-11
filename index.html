@@ -386,5 +386,23 @@ $('productName').addEventListener('input',e=>{selectedProduct=null;renderAddResu
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{page=b.dataset.page;render()});
 render(); // Mostra immediatamente l’ultima lista salvata
 refresh(); // Poi sincronizza i dati con Google Sheet
+
+// Quando si torna all'app (anche da un'altra app o dopo lo standby),
+// aggiorna la lista condivisa. Evita doppie richieste per lo stesso ritorno.
+let ultimoControlloRiapertura = Date.now();
+function aggiornaAllaRiapertura(){
+  if(document.visibilityState === 'hidden') return;
+  const adesso = Date.now();
+  if(adesso - ultimoControlloRiapertura < 3000) return;
+  ultimoControlloRiapertura = adesso;
+  refresh(); // rispetta sincronizzazioni e modifiche locali ancora in corso
+}
+document.addEventListener('visibilitychange', () => {
+  if(document.visibilityState === 'visible') aggiornaAllaRiapertura();
+});
+window.addEventListener('pageshow', event => {
+  if(event.persisted) aggiornaAllaRiapertura();
+});
+window.addEventListener('focus', aggiornaAllaRiapertura);
 if('serviceWorker' in navigator) navigator.serviceWorker.register('./service-worker.js');
 </script></body></html>
